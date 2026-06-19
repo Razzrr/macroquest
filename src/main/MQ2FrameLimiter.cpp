@@ -282,6 +282,13 @@ public:
 class CRenderHook
 {
 public:
+	// Is the device lost or still waiting on a reset? This is what happens during a minimize/restore -
+	// the render targets get thrown out, so while this is true we shouldn't be drawing the scene.
+	static bool IsDeviceLost()
+	{
+		return gpD3D9Device != nullptr && FAILED(gpD3D9Device->TestCooperativeLevel());
+	}
+
 	// This hooks the main render function. We can use it to toggle rendering of the main game scene.
 	// If we disable rendering, we should still draw imgui.
 	DETOUR_TRAMPOLINE_DEF(void, RenderScene_Trampoline, ())
@@ -290,6 +297,16 @@ public:
 #if MQ_EXPANSION_LEVEL == EXPANSION_LEVEL_ROF
 		EmuExtensions_RenderScene_Hook();
 #endif
+		// If the device is lost its render resources are gone, and walking the scene would crash on
+		// them. Skip the draw, but still mark the scene as rendered so the present path keeps running
+		// and gets the device back.
+		if (IsDeviceLost())
+		{
+			if (g_bRenderSceneCalled)
+				*g_bRenderSceneCalled = TRUE;
+			return;
+		}
+
 		if (RenderScene_Hook())
 		{
 			MQScopedBenchmark bm(bmRenderScene);
